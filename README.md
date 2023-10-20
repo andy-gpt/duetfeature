@@ -15,7 +15,7 @@ These two components are communicating via a channel.
 The purpose of this project is to showcase coding style, architectural patterns and approaches that are relevant to micro-service architecture.
 
 ## Architecture
-In recent years, various system architecture approaches like Clean Architecture, SOLID, and GRASP have been popular among high performant engineering teams. They all have the same objective, which is the separation of concerns. Below I'll focus on SOLID's **OCP** and **DIP** as I believe they are the most important.
+In recent years, various system architecture patterns or principles like Clean Architecture, SOLID, and GRASP, etc have emerged. They all have been popular among high performant engineering teams and they all have the same objective, which is the separation of concerns. Below I'll focus on SOLID's **OCP** and **DIP** as I believe they are the most important.
 
 ```
 If the OCP states the goal of OO architecture,
@@ -28,10 +28,10 @@ For both modules (`internal/usecase/capture` , `internal/usecase/ocr`) I use an 
 Here is an example of **Capture** initializer:
 ```go
 // Screen Capture
-capt := capture.NewCapturer(capture.WithWorker(
-&screenshot.ImageGenerator{}),   // This is underlying dependency to capture images
-capture.WithOutputChan(imageRequestChan),
-capture.WithInterval(2),
+capt := capture.NewCapturer(
+	capture.WithWorker(&screenshot.ImageGenerator{}),   // This is underlying dependency
+	capture.WithOutputChan(imageRequestChan),
+	capture.WithInterval(2),
 )
 ```
 
@@ -43,11 +43,11 @@ Two common ways to extend the functionality of a class without modifying it are 
 First, let's  implement file saving module `internal/datasaver`:
 ```go
 type FileSaver struct {
-Filename string
+	Filename string
 }
 
 func (fs *FileSaver) VisitCapture(c domain.CapturerInterface) {
-fmt.Println("file saved to disk...")
+	fmt.Println("file saved to disk...")
 }
 ```
 
@@ -55,16 +55,16 @@ Modifications to the original code will be minimal; we need to define a new Visi
 
 ```go
 type CapturerInterface interface {
-Accept(Visitor)
+	Accept(Visitor)
 }
 
 type Visitor interface {
-VisitCapture(CapturerInterface)
+	VisitCapture(CapturerInterface)
 }
 ...
 
 func (s *Capturer) Accept(v domain.Visitor) {
-v.VisitCapture(s)
+	v.VisitCapture(s)
 }
 ```
 
@@ -90,9 +90,9 @@ Example with functional options:
 ```
 // Screen Capture
 capt := capture.NewCapturer(
-capture.WithWorker(&screenshot.ImageGenerator{}),
-capture.WithOutputChan(imageRequestChan),
-capture.WithInterval(2),
+	capture.WithWorker(&screenshot.ImageGenerator{}),
+	capture.WithOutputChan(imageRequestChan),
+	capture.WithInterval(2),
 )
 ```
 
@@ -100,65 +100,66 @@ capture.WithInterval(2),
 
 ### Capture module
 
-Let's look at how we can test `internal/usecase/capture` module.  Since it relies on `screnshot` package, let's mock it using `mockgen` package. Once it's mocked we can cover it with tests.
+Let's look at how we can test `internal/usecase/capture` module which function is to periodically submit user's screen data.  Since it relies on `screnshot` package to make scherenshots, i'll mock it using `mockgen` package and test `internal/usecase/capture` and `screnshot` independently. 
 
-Here is a test example from `internal/usecase/capture/capture_test.go`.
+Here is a test case from `internal/usecase/capture/capture_test.go`. It simply verifies that data is supplied to the selected channel.
+
 ```go
 func TestCapturerRun(t *testing.T) {
-// Create channels for communication
-outputChan := make(chan []byte)
+	// Create channels for communication
+	outputChan := make(chan []byte)
 
-ctrl := gomock.NewController(t)
-defer ctrl.Finish()
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-// Mocking the worker
-m := mock_screenshot.NewMockImageGeneratorInterface(ctrl)
+	// Mocking the worker
+	m := mock_screenshot.NewMockImageGeneratorInterface(ctrl)
 
-// We expect the worker to be called at least once
-m.
-EXPECT().
-Capture().
-DoAndReturn(func() ([][]byte, error) {
-time.Sleep(1 * time.Second)
-size := 16 // Define the size of the byte array
-bytes := make([]byte, size)
-_, err := rand.Read(bytes)
-if err != nil {
-panic(err)
-}
+	// We expect the worker to be called at least once
+	m.
+		EXPECT().
+		Capture().
+		DoAndReturn(func() ([][]byte, error) {
+			time.Sleep(1 * time.Second)
+			size := 16 // Define the size of the byte array
+			bytes := make([]byte, size)
+			_, err := rand.Read(bytes)
+			if err != nil {
+				panic(err)
+			}
 
-return [][]byte{bytes}, nil
-}).
-MinTimes(1)
+			return [][]byte{bytes}, nil
+		}).
+		MinTimes(1)
 
-// Init capturer module
-captureModule := NewCapturer(WithWorker(
-m),
-WithOutputChan(outputChan),
-WithInterval(2),
-)
-captureModule.Start()
+	// Init capturer module
+	captureModule := NewCapturer(WithWorker(
+		m),
+		WithOutputChan(outputChan),
+		WithInterval(2),
+	)
+	captureModule.Start()
 
-// Test cases
-select {
-case data := <-outputChan:
-if reflect.TypeOf(data).Kind() != reflect.Slice {
-t.Errorf("Expected a slice, got %v", reflect.TypeOf(data).Kind())
-}
-if len(data) == 0 {
-t.Errorf("Received empty slice")
-}
-case <-time.After(5 * time.Second):
-t.Errorf("Timed out waiting for data")
-}
+	// Test cases
+	select {
+	case data := <-outputChan:
+		if reflect.TypeOf(data).Kind() != reflect.Slice {
+			t.Errorf("Expected a slice, got %v", reflect.TypeOf(data).Kind())
+		}
+		if len(data) == 0 {
+			t.Errorf("Received empty slice")
+		}
+	case <-time.After(5 * time.Second):
+		t.Errorf("Timed out waiting for data")
+	}
 
-// Stop the capture module
-captureModule.Stop()
-close(outputChan)
+	// Stop the capture module
+	captureModule.Stop()
+	close(outputChan)
 }
 ```
 ### Screenshot module
-While this module has been mocked in previous testing to isolate it from `Capture` it still needs to be tested to make sure screenshots are successfully created. We will have to use Use VMs and containers to simulate different OS environments, because this functional might fail on certain OS configurations.
+While this module has been mocked in previous testing to isolate it from `Capture` it still needs to be tested to make sure screenshots are successfully created. If this was a real application, we would have to use Use VMs and containers to simulate different OS environments, because this functional might fail on certain OS configurations.
 
 Here is a test code example from `pkg/screenshot/screenshot_test.go`:
 
@@ -166,32 +167,33 @@ Here is a test code example from `pkg/screenshot/screenshot_test.go`:
 package screenshot
 
 import (
-"github.com/kbinani/screenshot"
-"testing")
+	"github.com/kbinani/screenshot"
+	"testing"
+)
 
 func TestCaptureNotEmpty(t *testing.T) {
-gen := ImageGenerator{}
+	gen := ImageGenerator{}
 
-capture, err := gen.Capture()
-if err != nil {
-t.Errorf("Failed to capture screen: %s", err)
-return
-}
+	capture, err := gen.Capture()
+	if err != nil {
+		t.Errorf("Failed to capture screen: %s", err)
+		return
+	}
 
-for i, imgBytes := range capture {
-if len(imgBytes) == 0 {
-t.Errorf("Capture for display %d is empty", i)
-}
-}
+	for i, imgBytes := range capture {
+		if len(imgBytes) == 0 {
+			t.Errorf("Capture for display %d is empty", i)
+		}
+	}
 
 }
 
 func TestIfActiveDisplaysFound(t *testing.T) {
-n := screenshot.NumActiveDisplays()
-if n <= 0 {
-t.Error("No active displays found")
-return
-}
+	n := screenshot.NumActiveDisplays()
+	if n <= 0 {
+		t.Error("No active displays found")
+		return
+	}
 }
 ```
 
